@@ -1,7 +1,7 @@
 #pragma once
-#include <string.h>
 #include <algorithm>
-#include "huffmanTree.h"
+#include <string.h>
+#include "huffmanTree.hpp"
 
 
 struct charInfo
@@ -24,7 +24,7 @@ public:
 
 	charInfo/* 这里不能返回引用 */ operator+(const charInfo& right) const
 	{
-		return (*this)._charCount + right._charCount; //构建一个无名对象，返回
+		return (*this)._charCount + right._charCount; //构建一个无名对象，返回 不能返回栈空间上对象的引用
 	}
 
 	charInfo& operator=(charInfo& right)
@@ -48,6 +48,9 @@ public:
 	{
 		return (*this)._charCount != right._charCount;
 	}
+
+
+
 };
 
 
@@ -59,6 +62,8 @@ public:
 public:
 	void FileCompress(const std::string fileName);
 	void UnFileCompress(const std::string fileName);
+
+
 private:
 	void writeHuffmanCode(PHTN pRoot);
 	void getLine(FILE* PF, std::string & str);

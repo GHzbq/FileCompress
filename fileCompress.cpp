@@ -7,13 +7,15 @@ void fileCompress::writeHuffmanCode(PHTN pRoot)
 	
 	if ((pRoot->_pLeft == nullptr) && (pRoot->_pRight == nullptr))
 	{
-		std::string strCode;
+		std::string & strCode = _v_charset[/* unsigned char */(pRoot->_weight)._ch]._strCode;
 		PHTN pcur = pRoot;
 		PHTN pParent = pcur->_pParent;
 		while (pParent)
 		{
 			if (pParent->_pLeft == pcur)
+			{
 				strCode += '0';
+			}
 			else if(pParent->_pRight == pcur)
 			{
 				strCode += '1';
@@ -24,7 +26,6 @@ void fileCompress::writeHuffmanCode(PHTN pRoot)
 
 		// 我们统计的编码是从叶子节点到根节点的，需要翻转
 		reverse(strCode.begin(), strCode.end());
-		_v_charset[(pRoot->_weight)._ch]._strCode = strCode;
 
 		// 叶子节点处理完毕，返回处理其他叶子节点
 		return;
@@ -39,13 +40,25 @@ void  fileCompress::FileCompress(const std::string fileName)
 {
 	// 1. 先统计压缩文件字符出现次数
 	FILE* fIn = fopen(fileName.c_str(), "rb");
+
 	if (nullptr == fIn)
 	{
 		std::cout << "压缩文件打开失败" << std::endl;
 		return;
 	}
+
+	// 我们先测试一下文件大小，如果文件大小为0，我们就不压缩了
+	fseek(fIn, 0, SEEK_END);
+	long int fSize = ftell(fIn);
+	fseek(fIn, 0, SEEK_SET);
+	if (fSize == 0)
+	{
+		std::cout << "压缩文件大小为0" << std::endl;
+		fclose(fIn);
+		return;
+	}
 	
-	char Readbuf[1024] = { 0 };
+	unsigned char Readbuf[1024] = { 0 };
 	
 	_v_charset.resize(256);
 	for (size_t i = 0; i < _v_charset.size(); ++i)
@@ -56,7 +69,7 @@ void  fileCompress::FileCompress(const std::string fileName)
 	while (!feof(fIn))
 	{
 		memset(Readbuf, 0x00, sizeof(Readbuf) / sizeof(Readbuf[0]));
-		size_t rdSize = fread(Readbuf, sizeof(unsigned char), 1024, fIn);
+		size_t rdSize = fread(Readbuf, sizeof(unsigned char), sizeof(Readbuf) / sizeof(Readbuf[0]), fIn);
 		if (rdSize == 0)
 		{
 			// 读完文件了
@@ -66,7 +79,7 @@ void  fileCompress::FileCompress(const std::string fileName)
 		for (size_t i = 0; i < rdSize; ++i)
 		{
 			// 统计次数
-			++_v_charset[(unsigned char)Readbuf[i]]._charCount;
+			++_v_charset[/* (unsigned char)*/Readbuf[i]]._charCount;
 		}
 	}
 
@@ -83,7 +96,7 @@ void  fileCompress::FileCompress(const std::string fileName)
 
 	// 4. 为了方便解压缩，我们把huffman叶节点信息写到压缩文件的开始部分
 	std::string FC_filename;
-	FC_filename += fileName.substr(0, fileName.rfind('.'));
+	FC_filename += fileName.substr(/*fileName.rfind('\\')*/0, fileName.rfind('.'));
 	FC_filename += ".huff";
 
 	FILE* fOut = fopen(FC_filename.c_str(), "wb");
@@ -105,19 +118,19 @@ void  fileCompress::FileCompress(const std::string fileName)
 			++legalNodeCount;
 			Head += _v_charset[i]._ch;
 			Head += ','; 
-			memset(Readbuf, 0x00, 1024);
-			//_itoa( _v_charset[i]._charCount, Readbuf, 10);
-            std::string str_int = std::to_string(_v_charset[i]._charCount);
+			// memset(Readbuf, 0x00, 1024);
+			// _itoa( _v_charset[i]._charCount, Readbuf, 10);
+			std::string str_uint = std::to_string(_v_charset[i]._charCount);
 			// Head += Readbuf;
-            Head += str_int;
+			Head += str_uint;
 			Head += '\n';
 		}
 	}
-	memset(Readbuf, 0x00, sizeof(Readbuf) / sizeof(Readbuf[0]));
-	// _itoa(legalNodeCount, Readbuf, 10);
-    std::string str_int = std::to_string(legalNodeCount);
-	HeadInfo += Readbuf;
-    HeadInfo += str_int;
+	/*memset(Readbuf, 0x00, sizeof(Readbuf) / sizeof(Readbuf[0]));
+	_itoa(legalNodeCount, Readbuf, 10);
+	HeadInfo += Readbuf;*/
+	std::string str_uint = std::to_string(legalNodeCount);
+	HeadInfo += str_uint;
 	HeadInfo += '\n';
 	HeadInfo += Head;
 	fwrite(HeadInfo.c_str(), sizeof(unsigned char), HeadInfo.size(), fOut);
@@ -125,57 +138,101 @@ void  fileCompress::FileCompress(const std::string fileName)
 
 	// 5. 根据huffman编码，压缩文件
 	memset(Readbuf, 0x00, sizeof(Readbuf) / sizeof(Readbuf[0]));
-	unsigned char WriteBuf[1024];
+	//unsigned char WriteBuf[1024];
 	size_t writeSize = 0;
-	while (!feof(fIn))
-	{
-		memset(Readbuf, 0x00, sizeof(Readbuf) / sizeof(Readbuf[0]));
+	int pos = 0;
+	unsigned char temp = 0;
 
-		size_t rdSize = fread(Readbuf, sizeof(unsigned char), 1024, fIn);
+	while (true)
+	{
+		size_t rdSize = fread(Readbuf, sizeof(unsigned char), sizeof(Readbuf) / sizeof(Readbuf[0]), fIn);
 		if (rdSize == 0)
 		{
 			// 文件读完了
 			break;
 		}
 
-		// 
-		int pos = 7;
-		unsigned char temp = 0;
 		for (size_t i = 0; i < rdSize; ++i)
 		{
-			std::string strCode = _v_charset[(unsigned char)Readbuf[i]]._strCode;
+			std::string& strCode = _v_charset[Readbuf[i]]._strCode;
+
 			for (size_t j = 0; j < strCode.size(); ++j)
 			{
-				if (strCode[j] == '1')
+				temp <<= 1;
+				if ('1' == strCode[j])
 				{
-					temp |= (1 << pos);
-					--pos;
+					temp |= 1;
 				}
-				else
+
+				++pos;
+				if (8 == pos)
 				{
-					temp &= ~(1 << pos);
-					--pos;
-				}
-				if (pos == -1)
-				{
-					pos = 7;
-					WriteBuf[writeSize++] = temp;
+					fputc(temp, fOut);
+					pos = 0;
 					temp = 0;
 				}
-				if (writeSize == 1024)
-				{
-					fwrite(WriteBuf, sizeof(unsigned char), 1024, fOut);
-					writeSize = 0;
-				}
+
 			}
-		}// end of for
-		if (pos != -1)
-		{
-			// temp <<= pos; // 感觉这里出了问题
-			WriteBuf[writeSize++] = temp;
-			fwrite(WriteBuf, sizeof(unsigned char), writeSize, fOut);// 0x80 1000 0000
 		}
-	}// end of while
+	} // end of while(true)
+
+	if (pos > 0 && pos < 8)
+	{
+		temp <<= (8 - pos);
+		fputc(temp, fOut);
+	}
+
+	//while (!feof(fIn))
+	//{
+	//	memset(Readbuf, 0x00, sizeof(Readbuf) / sizeof(Readbuf[0]));
+
+	//	size_t rdSize = fread(Readbuf, sizeof(unsigned char), sizeof(Readbuf) / sizeof(Readbuf[0]), fIn);
+	//	if (rdSize == 0)
+	//	{
+	//		// 文件读完了
+	//		break;
+	//	}
+
+	//	// 
+	//	pos = 7;
+	//	temp = 0;
+	//	for (size_t i = 0; i < rdSize; ++i)
+	//	{
+	//		std::string &strCode = _v_charset[/*(unsigned char)*/Readbuf[i]]._strCode;
+	//		for (size_t j = 0; j < strCode.size(); ++j)
+	//		{
+	//			if (strCode[j] == '1')
+	//			{
+	//				temp |= (1 << pos);
+	//			}
+	//			else
+	//			{
+	//				temp &= ~(1 << pos);
+	//			}
+
+	//			--pos;
+	//			if (pos == -1)
+	//			{
+	//				pos = 7;
+	//				WriteBuf[writeSize++] = temp;
+	//				temp = 0;
+	//			}
+
+	//			if (writeSize == 1024)
+	//			{
+	//				fwrite(WriteBuf, sizeof(unsigned char), 1024, fOut);
+	//				writeSize = 0;
+	//			}
+	//		}
+	//	}// end of for
+	//}// end of while
+	//if (pos != -1 && writeSize != 0)
+	//{
+	//	// temp <<= pos; // 感觉这里出了问题
+	//	WriteBuf[writeSize++] = temp;
+	//	fwrite(WriteBuf, sizeof(unsigned char), writeSize, fOut);// 0x80 1000 0000
+	//	writeSize = 0;
+	//}
 
 	fclose(fIn);
 	fclose(fOut);
@@ -216,7 +273,7 @@ void fileCompress::UnFileCompress(const std::string fileName)
 
 	std::string str_lineCount;
 	getLine(fIn, str_lineCount);
-	size_t lineCount = atoi(str_lineCount.c_str());
+	size_t lineCount = /*std::stoi(str_lineCount);*/atoi(str_lineCount.c_str());
 	_v_charset.clear();
 	_v_charset.resize(256);
 
@@ -243,6 +300,15 @@ void fileCompress::UnFileCompress(const std::string fileName)
 	// 重建huffman树
 	huffmanTree<charInfo> ht;
 	ht.createHuffmanTree(_v_charset);
+
+	PHTN pcur = ht.getPRoot();
+	if (nullptr == pcur)
+	{
+		std::cout << "huffman树创建失败" << std::endl;
+		fclose(fIn);
+		fclose(fOut);
+		return;
+	}
 
 	// 获取huffman编码
 	writeHuffmanCode(ht.getPRoot());
@@ -283,84 +349,135 @@ void fileCompress::UnFileCompress(const std::string fileName)
 	unsigned char ReadBuf[1024] = { 0 };
 	unsigned char WriteBuf[1024] = { 0 };
 	size_t wtSize = 0;
-	size_t totalSize = (ht.getPRoot())->_weight._charCount;
-	PHTN pcur = ht.getPRoot();
-	if (pcur == nullptr)
-	{
-		std::cout << "huffman树创建失败（huffman根节点为空）\n";
-		fclose(fIn);
-		fclose(fOut);
-		return;
-	}
+
+	pcur = ht.getPRoot();
+	size_t totalSize = pcur->_weight._charCount;
+	
+	
 	// long int curfileSize = ftell(fIn);
 
-	int count = 0;
+	// int count = 0;
 
-	while (!feof(fIn))
+	int pos = 7;
+	while (true)
 	{
-		// 清空字符串
-		memset(ReadBuf, 0x00, sizeof(ReadBuf)/sizeof(ReadBuf[0]));
 		size_t rdSize = fread(ReadBuf, sizeof(unsigned char), sizeof(ReadBuf) / sizeof(ReadBuf[0]), fIn);
-		++count;
-		//int ret = feof(fIn);
-		//if (ret == 0)
-		//{
-		//	std::cout << "fghjkll\n";// 
-		//}
 		if (rdSize == 0)
-		{
-			// 文件已读完
-			return;
-		}
-		unsigned char ch = 0;
-		int pos = 7;
-		for (size_t i = 0; i < rdSize ; ++i)
-		{
-			ch = ReadBuf[i];
-			while (pos > -1)
-			{
-				if (ch & (1 << pos))
-				{
-					--pos;
-					pcur = pcur->_pRight;
-				}
-				else
-				{
-					--pos;
-					pcur = pcur->_pLeft;
-				}
-
-				if (pcur->_pLeft == nullptr && pcur->_pRight == nullptr)
-				{
-					// 叶子节点了
-					WriteBuf[wtSize++] = (pcur->_weight)._ch;
-					--totalSize;
-					if (totalSize == 0)
-					{
-						break;
-					}
-					if (wtSize == 1024)
-					{
-						fwrite(WriteBuf, sizeof(unsigned char), sizeof(WriteBuf) / sizeof(WriteBuf[0]), fOut);
-						memset(WriteBuf, 0x00, sizeof(WriteBuf)/sizeof(WriteBuf[0]));
-						wtSize = 0;
-					}
-					pcur = ht.getPRoot();
-				}
-			} // end of while
-			pos = 7;
-			if (totalSize == 0)
-			{
-				break;
-			}
-		}
-
-		if (totalSize == 0)
 		{
 			break;
 		}
 
-	}// end of while
+		for (size_t i = 0; i < rdSize; ++i)
+		{
+			pos = 7;
+			unsigned char uch = ReadBuf[i];
+			for (size_t j = 0; j < 8; ++j)
+			{
+				if (uch & (1 << pos))
+				{
+					// 1
+					pcur = pcur->_pRight;
+				}
+				else
+				{
+					// 0
+					pcur = pcur->_pLeft;
+				}
+				--pos;
+				
+				// 检测pcur是否走到叶子节点位置
+				if (pcur->_pLeft == nullptr && pcur->_pRight == nullptr)
+				{
+					// 是叶子节点
+					fputc((pcur->_weight)._ch, fOut);
+					pcur = ht.getPRoot();
+					--totalSize;
+					if (0 == totalSize)
+					{
+						break;
+					}
+				}
+			} // end of for(j)
+		}// end of for(i)
+	}// end of while(true)
+
+	//while (!feof(fIn))
+	//{
+	//	// 清空字符串
+	//	memset(ReadBuf, 0x00, sizeof(ReadBuf)/sizeof(ReadBuf[0]));
+	//	size_t rdSize = fread(ReadBuf, sizeof(unsigned char), sizeof(ReadBuf) / sizeof(ReadBuf[0]), fIn);
+	//	// ++count;
+	//	//int ret = feof(fIn);
+	//	//if (ret == 0)
+	//	//{
+	//	//	std::cout << "fghjkll\n";// 
+	//	//}
+	//	if (rdSize == 0)
+	//	{
+	//		// 文件已读完
+	//		return;
+	//	}
+	//	unsigned char ch = 0;
+	//	int pos = 7;
+	//	for (size_t i = 0; i < rdSize ; ++i)
+	//	{
+	//		ch = ReadBuf[i];
+	//		while (pos > -1)
+	//		{
+	//			if (ch & (1 << pos))
+	//			{
+	//				--pos;
+	//				pcur = pcur->_pRight;
+	//			}
+	//			else
+	//			{
+	//				--pos;
+	//				pcur = pcur->_pLeft;
+	//			}
+
+	//			if (pcur->_pLeft == nullptr && pcur->_pRight == nullptr)
+	//			{
+	//				// 叶子节点了
+	//				WriteBuf[wtSize++] = (pcur->_weight)._ch;
+	//				--totalSize;
+	//				if (totalSize == 0)
+	//				{
+	//					if (wtSize != 0)
+	//					{
+	//						fwrite(WriteBuf, sizeof(unsigned char), sizeof(WriteBuf) / sizeof(WriteBuf[0]), fOut);
+	//						memset(WriteBuf, 0x00, sizeof(WriteBuf) / sizeof(WriteBuf[0]));
+	//						wtSize = 0;
+	//					}
+	//					break;
+	//				}
+	//				if (wtSize == 1024)
+	//				{
+	//					fwrite(WriteBuf, sizeof(unsigned char), sizeof(WriteBuf) / sizeof(WriteBuf[0]), fOut);
+	//					memset(WriteBuf, 0x00, sizeof(WriteBuf)/sizeof(WriteBuf[0]));
+	//					wtSize = 0;
+	//				}
+	//				pcur = ht.getPRoot();
+	//			}
+	//		} // end of while
+	//		pos = 7;
+	//		if (totalSize == 0)
+	//		{
+	//			if (wtSize != 0)
+	//			{
+	//				fwrite(WriteBuf, sizeof(unsigned char), sizeof(WriteBuf) / sizeof(WriteBuf[0]), fOut);
+	//				memset(WriteBuf, 0x00, sizeof(WriteBuf) / sizeof(WriteBuf[0]));
+	//				wtSize = 0;
+	//			}
+	//			break;
+	//		}
+	//	}
+
+	//	if (totalSize == 0)
+	//	{
+	//		break;
+	//	}
+
+	//}// end of while
 
 	
 
